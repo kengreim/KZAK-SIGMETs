@@ -9,29 +9,61 @@ from decimal import Decimal
 import traceback
 import subprocess
 
-# Constants
+# For pdoc
+__docformat__ = "google"
+
+# START Constants
 VATSYS_MAPS_PATH_RELATIVE = r'vatSys Files\Profiles\ATOP Oakland\Maps'
+"""str: Standard path for the Maps folder of the ATOP Oakland profile inside a user's Documents folder."""
+
 ISIGMET_API_URL = 'https://www.aviationweather.gov/cgi-bin/json/IsigmetJSON.php'
+"""str: API URL to retrive GeoJSON SIGMETs."""
+
 DEFAULT_FILENAME = 'SIGMET.XML'
+"""str: Default output filename for the new map XML file."""
+
 DEFAULT_MAP_ATTRIBUTES = {
     'Type'             : 'Filled',
     'Name'             : 'SIGMETS',
     'Priorty'          : '1',
     'CustomColourName' : 'Indigo'
 }
+"""dict[str, str]: Dictionary defining default map attributes for the new SIGMETs map."""
+# END Constants
 
 def error(error_message: str):
+    """Writes styled error message to the console.
+
+    Args:
+        error_message: description of error
+    """
     print(Fore.WHITE + Back.RED + 'ERROR:' + Style.RESET_ALL + ' ' + error_message)
 
 def log(log_message: str):
+    """Writes styled log message to the console.
+
+    Args:
+        error_message: description of logged action
+    """
     print(Fore.WHITE + Back.GREEN + 'LOG:' + Style.RESET_ALL + ' ' + log_message)
 
 def exit_with_wait():
+    """ Prompts user to press enter key, then exits program
+    """
     input('Press enter key to exit...')
     exit()
 
 def find_vatsys_maps_dir() -> str | None:
+    """Attempts to locate the Maps folder for the vatSys ATOP Oakland Profile.
 
+    vatSys profiles are stored in a user's Documents folder. The method first
+    tries to location the Documents folder via the Windows Registry. If that
+    fails, it uses the default environment variable for a user's home. If that
+    fails, the folder can not be automatically found.
+
+    Returns:
+        A string with the path to the Maps folder if found. None if not found.
+    """
     # First we will try the registry method
     try:
         home_path = r'Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
@@ -56,7 +88,11 @@ def find_vatsys_maps_dir() -> str | None:
     return None
 
 def find_vatsys_exec() -> str | None:
+    """Attempts to locate the vatSys executable.
 
+    Returns:
+        A string with the path to the Maps folder if found. None if not found.
+    """
     # Try the x86 folder first
     full_path = Path(os.environ['ProgramFiles(x86)'], 'vatSys', 'bin', 'vatSys.exe')
     if os.path.exists(full_path):
@@ -71,6 +107,14 @@ def find_vatsys_exec() -> str | None:
     return None
 
 def filter_kzak_sigmets(geojson_dict: dict) -> list[dict]:
+    """Returns only the GeoJSON features where `firId` equals `KZAK`.
+
+    Args:
+        geojson_dict: A GeoJSON root element represented as a dictionary.
+    
+    Returns:
+        A list of GeoJSON features, where each is a dictionary.
+    """
     return_list = []
     for feature in geojson_dict['features']:
         if 'firId' in feature['properties'] and feature['properties']['firId'] == 'KZAK':
@@ -87,10 +131,12 @@ def make_base_map_xml(map_attributes: dict[str, str] = DEFAULT_MAP_ATTRIBUTES) -
     return (maps_root, map)
 
 def coord_to_str(coord: float, int_length: int) -> str:
-    d = Decimal(str(coord))
+    d = Decimal(str(coord)) # conversion to avoid float precision isues?
+    # API warns us we might get longitudes > 180, and to subtract 360 if we do
     integer_part = int(d) - 360 if int(d) > 180 else int(d)
     integer_part_str = str(integer_part).zfill(int_length)
     fractional_part = d % 1
+    #vatSys apaprently doesn't like if we have fewer than 3 decimal places?
     fractional_part_str = f'{fractional_part:.3f}'.lstrip('0').lstrip('-0')
     leader = '+' if integer_part > 0 else ''
     return leader + integer_part_str + fractional_part_str
@@ -108,15 +154,22 @@ def make_infill_xml(sigmet_poly: list[list[float]]) -> etree.Element:
 
     # Create all the point strings from the poly coords and add inside <Point> element
     point_strings = [lat_to_str(latitude) + long_to_str(longitude) for longitude, latitude in sigmet_poly]
-    log('created polygon with ISO 6709 coordinates %s' % point_strings)
     point_element.text = '/'.join(point_strings)
+    log('created polygon with ISO 6709 coordinates %s' % point_strings)
 
     return infill_element
 
 def run(vatsys_maps_dir: str, output_filename: str):
-    
-    log('running with output location %s' % Path(vatsys_maps_dir, output_filename))
+    """Main execution function for the script. Fetches SIGMETs from APIs, calls functions to
+    parse data and form XML, and writes output.
 
+    Args:
+        vatsys_maps_dir: Path to the Maps folder of the vatSys ATOP Oakland profile.
+        output_filname: Desired filename of the output XML file which will be saved in
+            the Maps folder of the vatSys ATOP Oakland profile.
+    """
+    log('running with output location %s' % Path(vatsys_maps_dir, output_filename))
+    
     # Fetch SIGMETs from API
     try:
         r = requests.get(ISIGMET_API_URL)
@@ -142,7 +195,6 @@ def run(vatsys_maps_dir: str, output_filename: str):
         error('could not form XML')
         traceback.print_exc()
         exit_with_wait()
-
     
     # Write output XML
     try:
@@ -154,10 +206,11 @@ def run(vatsys_maps_dir: str, output_filename: str):
         traceback.print_exc()
         exit_with_wait()
 
+
 if __name__ == '__main__':
 
     ## Creating the argument parser
-    ## TODO: add options for verbosity? or to launch vatSys after?
+    ## TODO: add options for verbosity? or to launch vatSys after? need to implement color option
     parser = argparse.ArgumentParser()
     parser.add_argument('--mapsdir', help="location of vatSys Maps folder for ATOP Oakland profile")
     parser.add_argument('--filename', help="full name of output XML file (including .xml)")
