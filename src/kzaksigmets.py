@@ -25,7 +25,7 @@ DEFAULT_FILENAME = 'SIGMET.XML'
 DEFAULT_MAP_ATTRIBUTES = {
     'Type'             : 'Filled',
     'Name'             : 'SIGMETS',
-    'Priorty'          : '1',
+    'Priority'          : '1',
     'CustomColourName' : 'Indigo'
 }
 """dict[str, str]: Dictionary defining default map attributes for the new SIGMETs map."""
