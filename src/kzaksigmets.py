@@ -23,12 +23,17 @@ DEFAULT_FILENAME = 'SIGMET.XML'
 """str: Default output filename for the new map XML file."""
 
 DEFAULT_MAP_ATTRIBUTES = {
-    'Type'             : 'Filled',
+    'Type'             : 'REST_NTZ_DAIW',
     'Name'             : 'SIGMETS',
-    'Priority'          : '1',
-    'CustomColourName' : 'Indigo'
+    'Priority'         : '1',
+    'CustomColourName' : 'PRDArea'
 }
 """dict[str, str]: Dictionary defining default map attributes for the new SIGMETs map."""
+
+DEFAULT_POLY_ATTRIBUTES = {
+    'Type' : 'Line'
+}
+"""dict[str, str]: Dictionary defining default poly attributes for each SIGMET poly we draw."""
 # END Constants
 
 def error(error_message: str):
@@ -147,17 +152,17 @@ def long_to_str(coord: float) -> str:
 def lat_to_str(coord: float) -> str:
     return coord_to_str(coord, 2)
 
-def make_infill_xml(sigmet_poly: list[list[float]]) -> etree.Element:
+def make_poly_xml(sigmet_poly: list[list[float]]) -> etree.Element:
     # Create the empty elements
-    infill_element = etree.Element('Infill')  
-    point_element = etree.SubElement(infill_element, 'Point')
+    poly_element = etree.Element(DEFAULT_POLY_ATTRIBUTES['Type'])
+    point_element = etree.SubElement(poly_element, 'Point')
 
     # Create all the point strings from the poly coords and add inside <Point> element
     point_strings = [lat_to_str(latitude) + long_to_str(longitude) for longitude, latitude in sigmet_poly]
     point_element.text = '/'.join(point_strings)
     log('created polygon with ISO 6709 coordinates %s' % point_strings)
 
-    return infill_element
+    return poly_element
 
 def run(vatsys_maps_dir: str, output_filename: str):
     """Main execution function for the script. Fetches SIGMETs from APIs, calls functions to
@@ -189,7 +194,7 @@ def run(vatsys_maps_dir: str, output_filename: str):
         log('found %d SIGMETs for KZAK' % len(filtered))
         for geojson_sigmet in filtered:
             for poly_coords in geojson_sigmet['geometry']['coordinates']:
-                infill_xml = make_infill_xml(poly_coords)
+                infill_xml = make_poly_xml(poly_coords)
                 map_element.append(infill_xml)
     except Exception:
         error('could not form XML')
