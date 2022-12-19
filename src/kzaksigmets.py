@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 import winreg
 import requests
 from lxml import etree
@@ -8,6 +9,7 @@ from colorama import Fore, Back, Style
 from decimal import Decimal
 import traceback
 import subprocess
+from shapely.geometry.polygon import Polygon
 
 # For pdoc
 __docformat__ = "google"
@@ -34,6 +36,11 @@ DEFAULT_POLY_ATTRIBUTES = {
     'Type' : 'Line'
 }
 """dict[str, str]: Dictionary defining default poly attributes for each SIGMET poly we draw."""
+
+DEFAULT_LABEL_ATTRIBUTES = {
+    'HasLeader' : 'false'
+}
+"""dict[str, str]: Dictionary defining default label attributes for each SIGMET label we draw."""
 # END Constants
 
 def error(error_message: str):
@@ -57,6 +64,20 @@ def exit_with_wait():
     """
     input('Press enter key to exit...')
     exit()
+
+def convert_to_phonetic(word: str) -> str:
+    """Converts a code word from the NATO phonetic alphabet into it's associated
+    letter. Assumes that the given code word is a legitimate code word.
+
+    Args:
+        word: A code word that is part of the NATO phonetic alphabet.
+
+    Returns:
+        A single-character (alphabet letter) corresponding to code word.
+    """
+    
+    return word[0].upper()
+
 
 def find_vatsys_maps_dir() -> str | None:
     """Attempts to locate the Maps folder for the vatSys ATOP Oakland Profile.
@@ -164,6 +185,30 @@ def make_poly_xml(sigmet_poly: list[list[float]]) -> etree.Element:
 
     return poly_element
 
+def make_label_xml(coords, series_id_str, label_attributes: dict[str, str] = DEFAULT_LABEL_ATTRIBUTES) -> etree.Element:
+    # Create Label element
+    label_element = etree.Element('Label')
+    for attribute, val in label_attributes.items():
+        label_element.set(attribute, val)
+    
+    # Convert seriesId string to shortened label text
+    r = re.match(r'(\S+) ([0-9]+)', series_id_str)
+    letter = convert_to_phonetic(r.group(1))
+    number = r.group(2)
+    label_name = 'SIG-%s%s' % (letter, number)
+
+    # Calculate centroid and convert to ISO 6709
+    centroid = Polygon(coords).centroid
+    point_str = lat_to_str(centroid.y) + long_to_str(centroid.x)
+
+    # Create Point child element with label text and inner coordinate for centroid
+    point_element = etree.SubElement(label_element, 'Point')
+    point_element.set('Name', label_name)
+    point_element.text = point_str
+    log('created label with ISO 6709 coordinates %s and label %s' % (point_str, label_name))
+
+    return label_element
+
 def run(vatsys_maps_dir: str, output_filename: str):
     """Main execution function for the script. Fetches SIGMETs from APIs, calls functions to
     parse data and form XML, and writes output.
@@ -189,13 +234,15 @@ def run(vatsys_maps_dir: str, output_filename: str):
     try:
         # Make the base <Maps> and <Map> element
         maps_root, map_element = make_base_map_xml()
-        # Iterate over each KZAK GeoJSON feature and make the <Infill> xml. Add to <Map>
+        # Iterate over each KZAK GeoJSON feature and make the Poly xml (<Infill> or <Line>). Add to <Map>
         filtered = filter_kzak_sigmets(sigmets_json)
         log('found %d SIGMETs for KZAK' % len(filtered))
         for geojson_sigmet in filtered:
             for poly_coords in geojson_sigmet['geometry']['coordinates']:
-                infill_xml = make_poly_xml(poly_coords)
-                map_element.append(infill_xml)
+                poly_xml = make_poly_xml(poly_coords)
+                label_xml = make_label_xml(poly_coords, geojson_sigmet['properties']['seriesId'])
+                map_element.append(poly_xml)
+                map_element.append(label_xml)
     except Exception:
         error('could not form XML')
         traceback.print_exc()
